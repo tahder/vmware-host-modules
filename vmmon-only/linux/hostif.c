@@ -75,6 +75,7 @@
 
 #include "pgtbl.h"
 #include "versioned_atomic.h"
+#include "compat_poll.h"
 
 #if !defined(CONFIG_HIGH_RES_TIMERS)
 #error CONFIG_HIGH_RES_TIMERS required for acceptable performance
@@ -2605,7 +2606,7 @@ HostIF_SemaphoreWait(VMDriver *vm,   // IN:
 
       poll_initwait(&table);
       current->state = TASK_INTERRUPTIBLE;
-      mask = file->f_op->poll(file, &table.pt);
+      mask = compat_vfs_poll(file, &table.pt);
       if (!(mask & (POLLIN | POLLERR | POLLHUP))) {
          vm->vmhost->vcpuSemaTask[vcpuid] = current;
          schedule_timeout(timeoutms * HZ / 1000);  // convert to Hz
