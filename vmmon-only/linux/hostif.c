@@ -47,6 +47,7 @@
 #include <asm/asm.h>
 #include <asm/io.h>
 #include <asm/page.h>
+#include <asm/tlbflush.h>
 #include <asm/uaccess.h>
 #include <asm/irq_vectors.h>
 #include <linux/capability.h>
@@ -2123,6 +2124,30 @@ HostIF_CopyToUser(VA64 dst,         // OUT
 }
 
 
+static void *vmap_exec_page(struct page *p)
+{
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)) && !defined pgprot_nx
+   return vmap(&p, 1, VM_MAP, VM_PAGE_KERNEL_EXEC);
+#else
+   /* Starting with 5.8, vmap() always sets the NX bit, but the cross
+    * page needs to be executable. */
+   pte_t *ptes[1];
+   struct vm_struct *area;
+
+   area = alloc_vm_area(1UL << PAGE_SHIFT, ptes);
+   if (area == NULL)
+      return NULL;
+
+   set_pte(ptes[0], mk_pte(p, VM_PAGE_KERNEL_EXEC));
+
+   preempt_disable();
+   __flush_tlb_all();
+   preempt_enable();
+
+   return area->addr;
+#endif
+}
+
 /*
  *-----------------------------------------------------------------------------
  *
@@ -2156,7 +2181,7 @@ HostIF_AllocCrossPage(VMDriver *vm)
     * The task switch code needs to map crosspage to a page with RWX permission.
     * We use the vmap interface instead of kmap due to bug 43907.
     */
-   vPgAddr = vmap(&page, 1, VM_MAP, VM_PAGE_KERNEL_EXEC);
+   vPgAddr = vmap_exec_page(page);
    if (vPgAddr == NULL) {
       __free_page(page);
    }
